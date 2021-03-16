@@ -19,6 +19,14 @@ namespace BitSharp.SimpleClient
         {
             ClientSample sample = new ClientSample();
             sample.SetupBanlist("banlist.txt");
+            /* string folderForSecret = Path.Combine(Env.ContentRootPath, "_LicenseGenSecrets");
+                if (!Directory.Exists(folderForSecret))
+                    Directory.CreateDirectory(folderForSecret);
+                string genSecretPath = Path.Combine(folderForSecret, "SemanticReactorProject.nrproj");
+             * 
+             */
+
+
             await sample.LoadTorrentAsync("C:/9D4A9495BE35D97B13E60D143F37CC38378D8233.torrent", "D:/TorrentsDownload");
         }
 

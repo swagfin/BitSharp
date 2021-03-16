@@ -126,7 +126,7 @@ namespace Samples
             };
         }
 
-        public async Task LoadTorrentAsync(string torrentFilePath, string savePath = null)
+        public async Task LoadTorrentAsync(string torrentFilePath, string savePath)
         {
             // Load a .torrent file into memory
             Torrent torrent = await Torrent.LoadAsync(torrentFilePath);
@@ -137,7 +137,7 @@ namespace Samples
             ////Set First File Prioroty
             //torrent.Files[1].Priority = Priority.Highest;
             if (string.IsNullOrWhiteSpace(savePath))
-                savePath = AppDomain.CurrentDomain.BaseDirectory + "TorrentsDownload";
+                savePath = "TorrentsDownload";
             //Proceed
             if (!Directory.Exists(savePath))
                 Directory.CreateDirectory(savePath);
