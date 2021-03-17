@@ -7,7 +7,6 @@ namespace BitClient.HostedServices
         Task StartServiceAync();
         Task StopServiceAsync();
         QueueProcessorStatus GetCurrentStatus();
-        Task QueueOperationAsync(string torrentFilePath, string savePath);
     }
     public enum QueueProcessorStatus
     {

@@ -1,10 +1,12 @@
 ﻿@page
 @model IndexModel
-@{
-    ViewData["Title"] = "Home page";
-}
+@using BitClient.HostedServices
+@{ ViewData["Title"] = "Bit Client Web Page"; }
 
-<div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://docs.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+<div>
+    <b>Bit Client Processor Status: </b> @Model._queueStatus
+    @if (Model._queueStatus == QueueProcessorStatus.Stopped)
+    {<a href="?start=all">Start Service</a> }
+    else
+    {<a href="?stop=all">Stop Service</a>}
 </div>

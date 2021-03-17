@@ -1,10 +1,14 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
+using MonoTorrent;
+using MonoTorrent.Client;
+using MonoTorrent.Client.PiecePicking;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Net;
 using System.Threading.Tasks;
 using System.Timers;
 namespace BitClient.HostedServices.Implementations
@@ -17,12 +21,90 @@ namespace BitClient.HostedServices.Implementations
         public IServiceScopeFactory ScopeFactory { get; }
         private readonly int _timerWorkerInterval;
         private int _ExceptionCounts { get; set; } = 0;
-        public SMSProcessor(IServiceScopeFactory scopeFactory, ILogger<SMSProcessor> logger, IOptions<PersistanceOptions> configs)
+        private ClientEngine TorrentEngine { get; set; }
+        private BanList Banlist { get; set; }
+        public BitClientProcessor(IServiceScopeFactory scopeFactory, ILogger<BitClientProcessor> logger)
         {
             this.Logger = logger;
             this.CurrentStatus = QueueProcessorStatus.Stopped;
             this.ScopeFactory = scopeFactory;
-            this._timerWorkerInterval = configs.Value.MessagingProcessorInterval;
+            this._timerWorkerInterval = 1000;
+        }
+        void SetupEngine()
+        {
+            EngineSettings settings = new EngineSettings();
+            settings.AllowedEncryption = ChooseEncryption();
+
+            // If both encrypted and unencrypted connections are supported, an encrypted connection will be attempted
+            // first if this is true. Otherwise an unencrypted connection will be attempted first.
+            settings.PreferEncryption = true;
+
+            // Torrents will be downloaded here by default when they are registered with the engine
+            settings.SavePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Torrents");
+
+            // The maximum upload speed is 200 kilobytes per second, or 204,800 bytes per second
+            settings.MaximumUploadSpeed = 200 * 1024;
+
+            //EndPoint
+            TorrentEngine = new ClientEngine(settings);
+
+            // Tell the engine to listen at port 6969 for incoming connections
+            // engine.ChangeListenEndpoint(new IPEndPoint(IPAddress.Parse("127.0.0.1"), 6969));
+        }
+        EncryptionTypes ChooseEncryption()
+        {
+            EncryptionTypes encryption;
+            // This completely disables connections - encrypted connections are not allowed
+            // and unencrypted connections are not allowed
+            encryption = EncryptionTypes.None;
+
+            // Only unencrypted connections are allowed
+            encryption = EncryptionTypes.PlainText;
+
+            // Allow only encrypted connections
+            encryption = EncryptionTypes.RC4Full | EncryptionTypes.RC4Header;
+
+            // Allow unencrypted and encrypted connections
+            encryption = EncryptionTypes.All;
+            encryption = EncryptionTypes.PlainText | EncryptionTypes.RC4Full | EncryptionTypes.RC4Header;
+
+            return encryption;
+        }
+
+        private void SetupBanlist(string banlistFilePath)
+        {
+            Banlist = new BanList();
+
+            if (string.IsNullOrWhiteSpace(banlistFilePath))
+                return;
+            if (!File.Exists(banlistFilePath))
+                return;
+
+            // The banlist parser can parse a standard block list from peerguardian or similar services
+            BanListParser parser = new BanListParser();
+            IEnumerable<AddressRange> ranges = parser.Parse(File.OpenRead("banlist"));
+            Banlist.AddRange(ranges);
+
+            // Add a few IPAddress by hand
+            Banlist.Add(IPAddress.Parse("12.21.12.21"));
+            Banlist.Add(IPAddress.Parse("11.22.33.44"));
+            Banlist.Add(IPAddress.Parse("44.55.66.77"));
+
+            TorrentEngine.ConnectionManager.BanPeer += delegate (object o, AttemptConnectionEventArgs e)
+            {
+                IPAddress address;
+
+                // The engine can raise this event simultaenously on multiple threads
+                if (IPAddress.TryParse(e.Peer.ConnectionUri.Host, out address))
+                {
+                    lock (Banlist)
+                    {
+                        // If the value of e.BanPeer is true when the event completes,
+                        // the connection will be closed. Otherwise it will be allowed
+                        e.BanPeer = Banlist.IsBanned(address);
+                    }
+                }
+            };
         }
 
         public async Task StartServiceAync()
@@ -35,6 +117,10 @@ namespace BitClient.HostedServices.Implementations
 
                 Logger.LogInformation("Starting Service");
                 this.CurrentStatus = QueueProcessorStatus.Starting;
+                //Beging Engine Setup
+                SetupEngine();
+                SetupBanlist("banlist.txt");
+                await this.TorrentEngine.StartAll();
                 //Create an Instance of Timer
                 TimerWorker = new Timer();
                 TimerWorker.Elapsed += new ElapsedEventHandler(OnTimedEvent);
@@ -52,15 +138,16 @@ namespace BitClient.HostedServices.Implementations
 
         }
 
-        public Task StopServiceAsync()
+        public async Task StopServiceAsync()
         {
             Logger.LogInformation("Stopping Service");
             this.CurrentStatus = QueueProcessorStatus.Stopping;
             if (TimerWorker != null)
                 TimerWorker.Stop();
+            //Stop Client
+            await this.TorrentEngine.StopAllAsync();
             this.CurrentStatus = QueueProcessorStatus.Stopped;
             Logger.LogInformation("Service Stopped");
-            return Task.FromResult(true);
         }
 
         public QueueProcessorStatus GetCurrentStatus()
@@ -73,6 +160,8 @@ namespace BitClient.HostedServices.Implementations
 
             try
             {
+                if (TorrentEngine == null)
+                    throw new Exception("Torrent Engine has not been started yet");
 
                 TimerWorker.Stop();
                 this.CurrentStatus = QueueProcessorStatus.Seeding;
@@ -81,49 +170,72 @@ namespace BitClient.HostedServices.Implementations
 
                 using (var scope = ScopeFactory.CreateScope())
                 {
-                    var Db = scope.ServiceProvider.GetRequiredService<CrudsoftDataContext>();
-                    var allTriggers = await Db.TriggerMessagingProcessorQueues.Where(x => x.ExecutionStatus == ExecutionStatus.Queued).OrderBy(x => x.InsertionTime).Take(1000).ToListAsync();
-                    if (allTriggers != null && allTriggers.Count > 0)
-                        foreach (var trigger in allTriggers)
+                    var Db = scope.ServiceProvider.GetRequiredService<HostedRepository>();
+                    var allQueues = Db.BitClientProcessorQueues.Where(x => x.ExecutionStatus == ExecutionStatus.Queued).ToList();
+                    if (allQueues != null && allQueues.Count > 0)
+                        foreach (var queue in allQueues)
                         {
                             //Mark as Seeding
-                            trigger.ExecutionStatus = ExecutionStatus.Seeding;
-                            trigger.LastUpdatedTime = DateTime.UtcNow;
-                            //Save and Begin Stopwatch
-                            await Db.SaveChangesAsync();
+                            queue.ExecutionStatus = ExecutionStatus.Seeding;
+                            queue.LastUpdatedTime = DateTime.UtcNow;
                             Stopwatch stopWatch = new Stopwatch();
                             stopWatch.Start();
 
                             try
                             {
-                                Logger.LogInformation($"Processing, Trigger :{trigger.Id} AT: {DateTime.UtcNow} UTC");
+                                Logger.LogInformation($"Processing, Queue :{queue.Id} AT: {DateTime.UtcNow} UTC");
 
                                 #region ExecutionMain
-                                var msgService = scope.ServiceProvider.GetRequiredService<IMessagingService>();
-                                await msgService.SendAsync(trigger.Receiver, trigger.Message);
+                                // Load a .torrent file into memory
+                                Torrent torrent = await Torrent.LoadAsync(queue.TorrentFilePath);
+                                // Set all the files to not download
+                                //foreach (TorrentFile file in torrent.Files)
+                                //    file.Priority = Priority.High;
+                                ////Set First File Prioroty
+                                //torrent.Files[1].Priority = Priority.Highest;
+                                if (string.IsNullOrWhiteSpace(queue.TorrentSavePath))
+                                    queue.TorrentSavePath = "TorrentsDownload";
+                                //Proceed
+                                if (!Directory.Exists(queue.TorrentSavePath))
+                                    Directory.CreateDirectory(queue.TorrentSavePath);
+
+                                UserTorrentManager manager = new UserTorrentManager(torrent, queue.TorrentSavePath, new TorrentSettings());
+                                //Asssign
+                                manager.UserId = queue.UserId;
+                                manager.TrackingId = queue.Id;
+
+                                Db.UserTorrentManagers.Enqueue(manager);
+                                await TorrentEngine.Register(manager);
+                                // Disable rarest first and randomised picking - only allow priority based picking (i.e. selective downloading)
+                                PiecePicker picker = new StandardPicker();
+                                picker = new PriorityPicker(picker);
+                                await manager.ChangePickerAsync(picker);
+
+                                await this.TorrentEngine.StartAll();
                                 #endregion
 
-                                trigger.ExecutionFeedBack = "Processed Successfully";
-                                trigger.ExecutionStatus = ExecutionStatus.Processed;
-                                Logger.LogInformation($"Trigger Processed Successfully, Trigger :{trigger.Id} AT: {DateTime.UtcNow} UTC");
+                                queue.ExecutionFeedBack = "Added to Client for Download Successfully";
+                                queue.ExecutionStatus = ExecutionStatus.Processed;
+                                Logger.LogInformation($"Trigger Processed Successfully, Trigger :{queue.Id} AT: {DateTime.UtcNow} UTC");
 
 
                             }
                             catch (Exception ex)
                             {
-                                trigger.ExecutionStatus = ExecutionStatus.ErrorOccurred;
-                                trigger.ExecutionFeedBack = ex.Message;
-                                Logger.LogError($"ERROR: {ex.Message}, Trigger :{trigger.Id} AT: {DateTime.UtcNow} UTC");
+                                queue.ExecutionStatus = ExecutionStatus.ErrorOccurred;
+                                queue.ExecutionFeedBack = ex.Message;
+                                Logger.LogError($"ERROR: {ex.Message}, Trigger :{queue.Id} AT: {DateTime.UtcNow} UTC");
                             }
 
 
                             //**************** DONE *********************
 
                             stopWatch.Stop();
-                            trigger.LastUpdatedTime = DateTime.UtcNow;
-                            trigger.ExecutionInMiliseconds = stopWatch.ElapsedMilliseconds;
-                            await Db.SaveChangesAsync();
+                            queue.LastUpdatedTime = DateTime.UtcNow;
+                            queue.ExecutionInMiliseconds = stopWatch.ElapsedMilliseconds;
                         }
+
+
                     //Exception Count Reset
                     _ExceptionCounts = 0;
 
@@ -168,25 +280,5 @@ namespace BitClient.HostedServices.Implementations
             }
         }
 
-        public async Task QueueOperationAsync(SMSProcessorQueue queue)
-        {
-            using (var scope = ScopeFactory.CreateScope())
-            {
-                var Db = scope.ServiceProvider.GetRequiredService<CrudsoftDataContext>();
-                await Db.TriggerMessagingProcessorQueues.AddAsync(queue);
-                await Db.SaveChangesAsync();
-            }
-        }
-
-        public async Task QueueOperationAsync(List<SMSProcessorQueue> queues)
-        {
-            using (var scope = ScopeFactory.CreateScope())
-            {
-                var Db = scope.ServiceProvider.GetRequiredService<CrudsoftDataContext>();
-                await Db.TriggerMessagingProcessorQueues.AddRangeAsync(queues);
-                await Db.SaveChangesAsync();
-            }
-        }
     }
-
 }
