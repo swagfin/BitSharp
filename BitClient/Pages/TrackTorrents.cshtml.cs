@@ -20,16 +20,21 @@ namespace BitClient.Pages
         }
 
 
-        public void OnGet(string trackingId = null)
+        public void OnGet(string trackingId = null, string download = null)
         {
-            this.TorrentRepos = _hostedRepository.UserTorrentManagers.ToList();
-            this.QueuesRepos = _hostedRepository.BitClientProcessorQueues.ToList();
+            this.TorrentRepos = _hostedRepository.UserTorrentManagers.OrderByDescending(x => x.InsertionTimeUTC).ToList();
+            this.QueuesRepos = _hostedRepository.BitClientProcessorQueues.OrderByDescending(x => x.InsertionTimeUTC).ToList();
 
             if (!string.IsNullOrWhiteSpace(trackingId))
             {
                 FilteredTrackingId = trackingId;
                 this.TorrentRepos = TorrentRepos.Where(x => x.TrackingId == trackingId).ToList();
                 this.QueuesRepos = QueuesRepos.Where(x => x.TrackingId == trackingId).ToList();
+            }
+
+            if (!string.IsNullOrWhiteSpace(download))
+            {
+                //Do something if requesting to Download
             }
         }
     }

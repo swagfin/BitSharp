@@ -38,6 +38,7 @@ namespace BitClient.HostedServices
 
         public string UserId { get; set; } = "Public";
         public string TrackingId { get; set; } = Guid.NewGuid().ToString();
+        public DateTime InsertionTimeUTC { get; set; } = DateTime.UtcNow;
 
         public string TorrentInfo
         {

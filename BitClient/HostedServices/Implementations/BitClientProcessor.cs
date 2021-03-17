@@ -191,7 +191,7 @@ namespace BitClient.HostedServices.Implementations
                         {
                             //Mark as Seeding
                             queue.ExecutionStatus = ExecutionStatus.Seeding;
-                            queue.LastUpdatedTime = DateTime.UtcNow;
+                            queue.LastUpdatedTimeUTC = DateTime.UtcNow;
                             Stopwatch stopWatch = new Stopwatch();
                             stopWatch.Start();
 
@@ -209,12 +209,13 @@ namespace BitClient.HostedServices.Implementations
                                 //    file.Priority = Priority.High;
                                 ////Set First File Prioroty
                                 //torrent.Files[1].Priority = Priority.Highest;
-                                string saveDirectory = GetTorrentDownloadPath() + $"\\{queue.UserId}\\{queue.TrackingId}".ToUpper();
+                                string subPath = $"\\{queue.UserId}\\{queue.TrackingId}".ToUpper();
+                                string saveDirectory = GetTorrentDownloadPath() + subPath;
                                 UserTorrentManager manager = new UserTorrentManager(torrent, saveDirectory, new TorrentSettings());
                                 //Asssign
                                 manager.UserId = queue.UserId;
                                 manager.TrackingId = queue.TrackingId;
-                                manager.AvailableDownloadPath = saveDirectory;
+                                manager.AvailableDownloadPath = $"{this.options.TorrentDownloadPath}{subPath}";
 
                                 Db.UserTorrentManagers.Enqueue(manager);
                                 await TorrentEngine.Register(manager);
@@ -253,7 +254,7 @@ namespace BitClient.HostedServices.Implementations
                             //**************** DONE *********************
 
                             stopWatch.Stop();
-                            queue.LastUpdatedTime = DateTime.UtcNow;
+                            queue.LastUpdatedTimeUTC = DateTime.UtcNow;
                             queue.ExecutionInMiliseconds = stopWatch.ElapsedMilliseconds;
                         }
 
