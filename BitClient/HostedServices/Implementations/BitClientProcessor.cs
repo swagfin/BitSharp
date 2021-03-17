@@ -1,5 +1,7 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using MonoTorrent;
 using MonoTorrent.Client;
 using MonoTorrent.Client.PiecePicking;
@@ -16,19 +18,25 @@ namespace BitClient.HostedServices.Implementations
     public class BitClientProcessor : IBitClientProcessor
     {
         private readonly ILogger Logger;
+        private readonly HostedServicesSettings options;
+
         private Timer TimerWorker { get; set; }
         private QueueProcessorStatus CurrentStatus { get; set; }
         public IServiceScopeFactory ScopeFactory { get; }
+        public IWebHostEnvironment Environment { get; }
+
         private readonly int _timerWorkerInterval;
         private int _ExceptionCounts { get; set; } = 0;
         private ClientEngine TorrentEngine { get; set; }
         private BanList Banlist { get; set; }
-        public BitClientProcessor(IServiceScopeFactory scopeFactory, ILogger<BitClientProcessor> logger)
+        public BitClientProcessor(IServiceScopeFactory scopeFactory, IWebHostEnvironment environment, ILogger<BitClientProcessor> logger, IOptions<HostedServicesSettings> options)
         {
             this.Logger = logger;
+            this.options = options.Value;
             this.CurrentStatus = QueueProcessorStatus.Stopped;
             this.ScopeFactory = scopeFactory;
-            this._timerWorkerInterval = 1000;
+            Environment = environment;
+            this._timerWorkerInterval = this.options.BitClientQueueProcessorInterval;
         }
         void SetupEngine()
         {
@@ -38,10 +46,8 @@ namespace BitClient.HostedServices.Implementations
             // If both encrypted and unencrypted connections are supported, an encrypted connection will be attempted
             // first if this is true. Otherwise an unencrypted connection will be attempted first.
             settings.PreferEncryption = true;
-
             // Torrents will be downloaded here by default when they are registered with the engine
-            settings.SavePath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "Torrents");
-
+            settings.SavePath = GetTorrentDownloadPath();
             // The maximum upload speed is 200 kilobytes per second, or 204,800 bytes per second
             settings.MaximumUploadSpeed = 200 * 1024;
 
@@ -107,6 +113,13 @@ namespace BitClient.HostedServices.Implementations
             };
         }
 
+        private string GetTorrentDownloadPath()
+        {
+            string folder = Path.Combine(Environment.WebRootPath, this.options.TorrentDownloadPath);
+            if (!Directory.Exists(folder))
+                Directory.CreateDirectory(folder);
+            return folder;
+        }
         public async Task StartServiceAync()
         {
             try
@@ -138,16 +151,17 @@ namespace BitClient.HostedServices.Implementations
 
         }
 
-        public async Task StopServiceAsync()
+        public Task StopServiceAsync()
         {
             Logger.LogInformation("Stopping Service");
             this.CurrentStatus = QueueProcessorStatus.Stopping;
             if (TimerWorker != null)
                 TimerWorker.Stop();
             //Stop Client
-            await this.TorrentEngine.StopAllAsync();
+            this.TorrentEngine.StopAllAsync();
             this.CurrentStatus = QueueProcessorStatus.Stopped;
             Logger.LogInformation("Service Stopped");
+            return Task.CompletedTask;
         }
 
         public QueueProcessorStatus GetCurrentStatus()
@@ -183,26 +197,24 @@ namespace BitClient.HostedServices.Implementations
 
                             try
                             {
-                                Logger.LogInformation($"Processing, Queue :{queue.Id} AT: {DateTime.UtcNow} UTC");
+                                Logger.LogInformation($"Processing, Queue Tracking ID:{queue.TrackingId} AT: {DateTime.UtcNow} UTC");
 
                                 #region ExecutionMain
                                 // Load a .torrent file into memory
-                                Torrent torrent = await Torrent.LoadAsync(queue.TorrentFilePath);
+                                if (queue.TorrentFileBytes == null)
+                                    throw new Exception("Torrent Content in Bytes is Empty");
+                                Torrent torrent = await Torrent.LoadAsync(queue.TorrentFileBytes);
                                 // Set all the files to not download
                                 //foreach (TorrentFile file in torrent.Files)
                                 //    file.Priority = Priority.High;
                                 ////Set First File Prioroty
                                 //torrent.Files[1].Priority = Priority.Highest;
-                                if (string.IsNullOrWhiteSpace(queue.TorrentSavePath))
-                                    queue.TorrentSavePath = "TorrentsDownload";
-                                //Proceed
-                                if (!Directory.Exists(queue.TorrentSavePath))
-                                    Directory.CreateDirectory(queue.TorrentSavePath);
-
-                                UserTorrentManager manager = new UserTorrentManager(torrent, queue.TorrentSavePath, new TorrentSettings());
+                                string saveDirectory = GetTorrentDownloadPath() + $"\\{queue.UserId}\\{queue.TrackingId}".ToUpper();
+                                UserTorrentManager manager = new UserTorrentManager(torrent, saveDirectory, new TorrentSettings());
                                 //Asssign
                                 manager.UserId = queue.UserId;
-                                manager.TrackingId = queue.Id;
+                                manager.TrackingId = queue.TrackingId;
+                                manager.AvailableDownloadPath = saveDirectory;
 
                                 Db.UserTorrentManagers.Enqueue(manager);
                                 await TorrentEngine.Register(manager);
@@ -214,17 +226,27 @@ namespace BitClient.HostedServices.Implementations
                                 await this.TorrentEngine.StartAll();
                                 #endregion
 
-                                queue.ExecutionFeedBack = "Added to Client for Download Successfully";
+                                queue.ExecutionFeedBack = "Torrent added to Queue Successfully";
                                 queue.ExecutionStatus = ExecutionStatus.Processed;
-                                Logger.LogInformation($"Trigger Processed Successfully, Trigger :{queue.Id} AT: {DateTime.UtcNow} UTC");
+                                Logger.LogInformation($"Torrent added to Queue Successfully, Tracking Id :{queue.TrackingId} AT: {DateTime.UtcNow} UTC");
 
 
                             }
                             catch (Exception ex)
                             {
-                                queue.ExecutionStatus = ExecutionStatus.ErrorOccurred;
-                                queue.ExecutionFeedBack = ex.Message;
-                                Logger.LogError($"ERROR: {ex.Message}, Trigger :{queue.Id} AT: {DateTime.UtcNow} UTC");
+                                queue.ErrorsCount++;
+                                if (queue.ErrorsCount >= 10)
+                                {
+                                    queue.ExecutionStatus = ExecutionStatus.ErrorOccurred;
+                                    queue.ExecutionFeedBack = ex.Message;
+                                }
+                                else
+                                {
+                                    queue.ExecutionStatus = ExecutionStatus.Queued;
+                                    queue.ExecutionFeedBack = $"Requeued Attempt ({queue.ErrorsCount})";
+                                }
+
+                                Logger.LogError($"ERROR: {ex.Message}, Tracking Id :{queue.TrackingId} AT: {DateTime.UtcNow} UTC");
                             }
 
 

@@ -1,0 +1,76 @@
+﻿@page
+@model BitClient.Pages.TrackTorrentsModel
+@{ ViewData["Title"] = "Bit Client | Track Torrents"; }
+
+<hr />
+
+@if (!string.IsNullOrWhiteSpace(Model.FilteredTrackingId))
+{<p style="background-color:burlywood;padding:8px;">Currently Displaying Torrents and Queues with Tracking ID:<b>@Model.FilteredTrackingId</b> </p>}
+
+<h3>Torrents Seeding</h3>
+
+<table class="table">
+    <thead>
+        <tr> <th>Repository</th>  <th>Tracking ID</th> <th>User</th></tr>
+    </thead>
+
+    <tbody>
+        @if (Model.TorrentRepos != null)
+        {
+            foreach (var repo in Model.TorrentRepos)
+            {
+<tr>
+    <td>@repo.TorrentInfo</td>
+    <td>
+        @repo.TrackingId
+        @if (repo.Complete)
+        {
+<br />
+                        <a href="@repo.AvailableDownloadPath">View Downloads</a>}
+    </td>
+    <td>@repo.UserId</td>
+</tr>}
+            }
+    </tbody>
+</table>
+
+
+<hr />
+<h3>Queued Torrents</h3>
+
+
+<table class="table">
+    <thead>
+        <tr> <th>Queue</th>  <th>User</th> <th>Status</th> <th>Processing FeedBack</th></tr>
+    </thead>
+    <tbody>
+        @if (Model.QueuesRepos != null)
+        {
+            foreach (var queue in Model.QueuesRepos)
+            {
+<tr>
+    <td>@queue.TrackingId</td>
+    <td>@queue.UserId</td>
+    <td>@queue.ExecutionStatus </td>
+
+    <td>
+        @if (queue.ExecutionStatus != HostedServices.ExecutionStatus.Queued)
+        {
+<span>
+    @queue.ExecutionFeedBack <i style="font-size:10px;">(Finished in @queue.ExecutionInMiliseconds milliseconds)</i>
+</span> }
+else
+{ <span>@queue.ExecutionFeedBack</span>}
+    </td>
+</tr>}
+            }
+    </tbody>
+</table>
+
+
+
+
+
+
+<p>You can <a href="/UploadTorrentFile">Upload a Torrent</a> for Download</p>
+<p>You can <a href="/UploadTorrentFile">View Torrent Service</a> Status</p>

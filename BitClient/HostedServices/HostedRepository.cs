@@ -37,7 +37,7 @@ namespace BitClient.HostedServices
 
 
         public string UserId { get; set; } = "Public";
-        public Guid TrackingId { get; set; } = Guid.NewGuid();
+        public string TrackingId { get; set; } = Guid.NewGuid().ToString();
 
         public string TorrentInfo
         {
@@ -48,5 +48,7 @@ namespace BitClient.HostedServices
                 return $"{this.Torrent} | Size: {this.Torrent.Size.ReadableSizeDisplay()} | Downloaded: {this.Monitor.DataBytesDownloaded.ReadableSizeDisplay()} | Speed: {this.Monitor.DownloadSpeed.ReadableSpeedDisplay()} | Seeds: {this.Peers.Seeds:N0} | Leachs: {this.Peers.Leechs:N0} | Progress:  {this.Progress:N2}% | State: {this.State}";
             }
         }
+
+        public string AvailableDownloadPath { get; set; }
     }
 }

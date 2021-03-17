@@ -1,36 +1,19 @@
 ﻿using System;
+using System.IO;
 
 namespace BitClient.Utils
 {
-    public static class StringExtensions
+    public static class StreamExtensions
     {
-
-        /// <summary>
-        /// Truncates string so that it is no longer than the specified number of characters.
-        /// </summary>
-        /// <param name="str">String to truncate.</param>
-        /// <param name="length">Maximum string length.</param>
-        /// <returns>Original string or a truncated one if the original was too long.</returns>
-        public static string Truncate(this string str, int length)
+        public static byte[] ReadAllBytes(this Stream instream)
         {
-            if (length < 0)
+            if (instream is MemoryStream)
+                return ((MemoryStream)instream).ToArray();
+            using (var memoryStream = new MemoryStream())
             {
-                throw new ArgumentOutOfRangeException("length", "Length must be >= 0");
+                instream.CopyTo(memoryStream);
+                return memoryStream.ToArray();
             }
-
-            if (str == null)
-            {
-                return null;
-            }
-
-            int maxLength = Math.Min(str.Length, length);
-            return str.Substring(0, maxLength);
-        }
-
-
-        public static string TvaPartitionKey(this string str)
-        {
-            return $"tva_{str.ToLower().Substring(0, 3)}";
         }
     }
 

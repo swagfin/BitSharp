@@ -4,7 +4,7 @@ namespace BitClient.HostedServices
 {
     public class BitClientProcessorQueue
     {
-        public Guid Id { get; set; } = Guid.NewGuid();
+        public string TrackingId { get; set; } = Guid.NewGuid().ToString();
         public ExecutionStatus ExecutionStatus { get; set; } = ExecutionStatus.Queued;
         public long ExecutionInMiliseconds { get; set; } = 0;
         public DateTime LastUpdatedTime { get; set; } = DateTime.UtcNow;
@@ -12,9 +12,9 @@ namespace BitClient.HostedServices
         public string ExecutionFeedBack { get; set; }
 
 
-        public string TorrentFilePath { get; set; }
-        public string TorrentSavePath { get; set; }
+        public byte[] TorrentFileBytes { get; set; }
         public string UserId { get; set; } = "Public";
+        public int ErrorsCount { get; internal set; } = 0;
     }
 
     public enum ExecutionStatus

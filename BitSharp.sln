@@ -7,7 +7,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Client", "Client", "{531380
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BitSharp.SimpleClient", "src\BitSharp.SimpleClient\BitSharp.SimpleClient.csproj", "{B38491E6-5F7F-4323-985A-B426B17900EB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BitClient", "BitClient\BitClient.csproj", "{B0AE1B0F-D734-4CC6-9FE9-F4BC46318B5B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "BitClient", "BitClient\BitClient.csproj", "{B0AE1B0F-D734-4CC6-9FE9-F4BC46318B5B}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
