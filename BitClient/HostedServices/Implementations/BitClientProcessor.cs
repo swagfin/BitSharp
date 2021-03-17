@@ -205,6 +205,7 @@ namespace BitClient.HostedServices.Implementations
                                 if (queue.TorrentFileBytes == null)
                                     throw new Exception("Torrent Content in Bytes is Empty");
                                 Torrent torrent = await Torrent.LoadAsync(queue.TorrentFileBytes);
+
                                 // Set all the files to not download
                                 //foreach (TorrentFile file in torrent.Files)
                                 //    file.Priority = Priority.High;
@@ -218,8 +219,8 @@ namespace BitClient.HostedServices.Implementations
                                 manager.TrackingId = queue.TrackingId;
                                 manager.AvailableDownloadPath = $"{this.options.TorrentDownloadPath}{subPath}";
 
-                                Db.UserTorrentManagers.Enqueue(manager);
                                 await TorrentEngine.Register(manager);
+                                Db.UserTorrentManagers.Enqueue(manager);
                                 // Disable rarest first and randomised picking - only allow priority based picking (i.e. selective downloading)
                                 PiecePicker picker = new StandardPicker();
                                 picker = new PriorityPicker(picker);
@@ -237,7 +238,7 @@ namespace BitClient.HostedServices.Implementations
                             catch (Exception ex)
                             {
                                 queue.ErrorsCount++;
-                                if (queue.ErrorsCount >= 10)
+                                if (queue.ErrorsCount >= 5)
                                 {
                                     queue.ExecutionStatus = ExecutionStatus.ErrorOccurred;
                                     queue.ExecutionFeedBack = ex.Message;

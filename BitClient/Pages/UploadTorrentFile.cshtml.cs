@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using System;
-using System.Threading.Tasks;
 
 namespace BitClient.Pages
 {
@@ -36,7 +35,7 @@ namespace BitClient.Pages
         }
 
 
-        public async Task<ActionResult> OnPostAsync(IFormFile file)
+        public ActionResult OnPostAsync(IFormFile file)
         {
             try
             {
@@ -50,7 +49,8 @@ namespace BitClient.Pages
                 var allBytes = stream.ReadAllBytes();
                 //limit max upload length
                 //formFile.Length
-                var uploadedContent = await ImageUploadService.UploadImageAsync(stream, filename, this.Options.TorrentUploadPath + $"\\{userId}");
+                //No need of Uploading
+                //var uploadedContent = await ImageUploadService.UploadImageAsync(stream, filename, this.Options.TorrentUploadPath + $"\\{userId}");
                 //Queue For Download
                 string trackingId = $"{userId}-TRACK-RA{new Random().Next(9999, 99999)}-{DateTime.Now:yyyyMMddHHmmss}".ToUpper();
                 this.HostedRepository.BitClientProcessorQueues.Enqueue(new BitClientProcessorQueue
