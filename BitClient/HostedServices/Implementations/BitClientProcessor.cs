@@ -158,7 +158,8 @@ namespace BitClient.HostedServices.Implementations
             if (TimerWorker != null)
                 TimerWorker.Stop();
             //Stop Client
-            this.TorrentEngine.StopAllAsync();
+            if (TorrentEngine != null)
+                this.TorrentEngine.StopAllAsync();
             this.CurrentStatus = QueueProcessorStatus.Stopped;
             Logger.LogInformation("Service Stopped");
             return Task.CompletedTask;
