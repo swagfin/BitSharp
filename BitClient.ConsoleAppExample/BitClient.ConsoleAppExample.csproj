@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="9D4A9495BE35D97B13E60D143F37CC38378D8233.torrent" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="9D4A9495BE35D97B13E60D143F37CC38378D8233.torrent">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoTorrent" Version="1.0.29" />
+  </ItemGroup>
+
+</Project>
